@@ -1,0 +1,146 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <title>XEVENT // STRATEGIC DEFENSE</title>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.min.js"></script>
+    <style>
+        :root { --mint: #00ff88; --hazard: #ff3333; --gold: #ffcc00; --glass: rgba(0, 5, 2, 0.95); }
+        body { margin: 0; background: #000; font-family: 'Share Tech Mono', monospace; color: var(--mint); overflow: hidden; }
+        #view-port { position: absolute; width: 100%; height: 100%; z-index: 1; }
+        
+        .hud { position: absolute; z-index: 10; width: 100%; height: 100%; pointer-events: none; }
+        .panel { position: absolute; background: var(--glass); border: 1px solid var(--mint); padding: 15px; pointer-events: auto; backdrop-filter: blur(10px); }
+        
+        /* HEADER & THREAT CARD */
+        .header { top: 20px; left: 20px; border-left: 5px solid var(--mint); width: 380px; }
+        #threat-card { top: 120px; left: 20px; width: 350px; border-color: var(--hazard); display: none; box-shadow: 0 0 30px rgba(255, 51, 51, 0.2); }
+        
+        /* TERMINAL LOG */
+        #log-terminal { bottom: 20px; left: 20px; width: 420px; height: 110px; font-size: 0.75rem; overflow: hidden; border-color: rgba(0, 255, 136, 0.2); }
+        .log-line { margin-bottom: 4px; border-left: 2px solid var(--mint); padding-left: 8px; }
+
+        .btn-intercept { background: var(--hazard); color: #fff; border: none; padding: 12px; width: 100%; cursor: pointer; margin-top: 15px; font-weight: bold; letter-spacing: 2px; }
+        .blink { animation: blinker 1s linear infinite; }
+        @keyframes blinker { 50% { opacity: 0.2; } }
+    </style>
+</head>
+<body>
+
+    <div class="hud">
+        <div class="header panel">
+            <h1 style="margin:0; font-size: 1.1rem; letter-spacing: 3px;">XEVENT // GLOBAL SENTINEL</h1>
+            <div style="font-size: 0.6rem; color: var(--gold);">UPLINK: <span id="sync-status">AUTHENTICATING API...</span></div>
+        </div>
+
+        <div id="threat-card" class="panel">
+            <div style="color: var(--hazard); font-weight: bold; font-size: 0.7rem;" class="blink">[!] CRITICAL THREAT DETECTED</div>
+            <div id="obj-name" style="font-size: 1.6rem; color: #fff; margin: 5px 0;">--</div>
+            <div id="obj-stats" style="font-size: 0.85rem; line-height: 1.6; color: #ccc;"></div>
+            <button class="btn-intercept" onclick="launchIntercept()">INITIATE INTERCEPT</button>
+        </div>
+
+        <div id="log-terminal" class="panel"><div id="log-content"></div></div>
+    </div>
+
+    <div id="view-port"></div>
+
+    <script>
+        // YOUR INTEGRATED API KEY
+        const NASA_KEY = 'TwmOQwFxTI8JYaMVxcgfJH5OcVx2hQaMbkUK52lN'; 
+
+        const scene = new THREE.Scene();
+        const camera = new THREE.PerspectiveCamera(75, window.innerWidth/window.innerHeight, 0.1, 1000);
+        const renderer = new THREE.WebGLRenderer({ antialias: true });
+        renderer.setSize(window.innerWidth, window.innerHeight);
+        document.getElementById('view-port').appendChild(renderer.domElement);
+
+        // EARTH SETUP
+        const earth = new THREE.Mesh(
+            new THREE.SphereGeometry(4, 64, 64),
+            new THREE.MeshPhongMaterial({
+                map: new THREE.TextureLoader().load('https://unpkg.com/three-globe/example/img/earth-night.jpg'),
+                emissive: 0x00ff88, emissiveIntensity: 0.05
+            })
+        );
+        scene.add(earth);
+        scene.add(new THREE.AmbientLight(0x444444));
+        const sun = new THREE.DirectionalLight(0xffffff, 1); sun.position.set(5,3,5); scene.add(sun);
+        camera.position.z = 10;
+
+        // GHANA SECTOR NODE
+        const ring = new THREE.Mesh(
+            new THREE.RingGeometry(0.25, 0.35, 32),
+            new THREE.MeshBasicMaterial({ color: 0x00ff88, side: THREE.DoubleSide, transparent: true })
+        );
+        const phi = (90 - 7.9) * (Math.PI / 180);
+        const theta = (-1.0 + 180) * (Math.PI / 180);
+        ring.position.set(-4.02 * Math.sin(phi) * Math.cos(theta), 4.02 * Math.cos(phi), 4.02 * Math.sin(phi) * Math.sin(theta));
+        ring.lookAt(0,0,0);
+        scene.add(ring);
+
+        function addLog(msg) {
+            const log = document.getElementById('log-content');
+            const div = document.createElement('div');
+            div.className = 'log-line';
+            div.innerText = `> ${msg}`;
+            log.appendChild(div);
+            if(log.childNodes.length > 4) log.removeChild(log.firstChild);
+        }
+
+        async function fetchNasaData() {
+            addLog("REQUESTING NASA JPL TELEMETRY...");
+            try {
+                // Fetch for current date: 2026-01-11
+                const res = await fetch(`https://api.nasa.gov/neo/rest/v1/feed?start_date=2026-01-11&end_date=2026-01-11&api_key=${NASA_KEY}`);
+                const data = await res.json();
+                const neos = data.near_earth_objects["2026-01-11"];
+                
+                document.getElementById('sync-status').innerText = "SECURE CONNECTION ESTABLISHED";
+                addLog(`${neos.length} OBJECTS TRACKED IN LOCAL SECTOR`);
+
+                let threat = null;
+                neos.forEach(n => {
+                    if(n.is_potentially_hazardous_asteroid) threat = n;
+                });
+
+                if(threat) {
+                    ring.material.color.setHex(0xff3333); // TRIGGER RED CIRCLE
+                    document.getElementById('threat-card').style.display = "block";
+                    document.getElementById('obj-name').innerText = threat.name.replace(/[()]/g, '');
+                    const size = threat.estimated_diameter.meters.estimated_diameter_max;
+                    document.getElementById('obj-stats').innerHTML = `
+                        DIAMETER: ${size.toFixed(1)}m<br>
+                        VELOCITY: ${Math.round(threat.close_approach_data[0].relative_velocity.kilometers_per_hour).toLocaleString()} KM/H<br>
+                        MISS DIST: ${Math.round(threat.close_approach_data[0].miss_distance.kilometers).toLocaleString()} KM
+                    `;
+                    addLog("CRITICAL: POTENTIAL HAZARD IDENTIFIED");
+                } else {
+                    addLog("SECTOR CLEAR: NO IMMEDIATE THREATS");
+                }
+            } catch (e) {
+                addLog("ERROR: API AUTHENTICATION FAILED");
+                document.getElementById('sync-status').innerText = "OFFLINE";
+            }
+        }
+
+        function launchIntercept() {
+            addLog("TARGET LOCKED. LAUNCHING KINETIC INTERCEPTOR...");
+            document.getElementById('threat-card').style.display = "none";
+            ring.material.color.setHex(0x00ff88);
+            setTimeout(() => addLog("THREAT NEUTRALIZED. RETURNING TO MONITORING."), 2000);
+        }
+
+        fetchNasaData();
+
+        function animate() {
+            requestAnimationFrame(animate);
+            earth.rotation.y += 0.001;
+            const pulse = 1 + Math.sin(Date.now() * 0.005) * 0.2;
+            ring.scale.set(pulse, pulse, pulse);
+            renderer.render(scene, camera);
+        }
+        animate();
+    </script>
+</body>
+</html>
